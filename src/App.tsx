@@ -20,7 +20,6 @@ import {
   playWinFanfare,
 } from './lib/audio'
 import {
-  formatMoney,
   getSymbol,
   loadJackpot,
   loadWinners,
