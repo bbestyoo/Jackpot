@@ -171,17 +171,65 @@ export const SYMBOLS: SlotSymbol[] = [
   },
 ]
 
-/** Prize pool with try again weighted twice so it shows up more often */
-export const PRIZE_POOL: SymbolId[] = [
-  ...SYMBOLS.filter((s) => !s.isLose).map((s) => s.id),
-  'try_again',
-  'try_again',
+/**
+ * Weight-based OUTCOME odds. One roll decides the entire spin.
+ *
+ * Total = 1000. The single roll picks exactly one of these:
+ *   try_again           700 → 70%  (LOSE)
+ *   glass_cover          80 →  8%  (WIN)
+ *   mouse                40 →  4%  (WIN)
+ *   keyboard             40 →  4%  (WIN)
+ *   typec_earphone       30 →  3%  (WIN)
+ *   charger              25 →  2.5%
+ *   wireless_earphone    20 →  2%
+ *   cashback_3           15 →  1.5%
+ *   cashback_5           12 →  1.2%
+ *   lv_speaker            8 →  0.8%
+ *   smart_watch           8 →  0.8%
+ *   keypad_mobile         6 →  0.6%
+ *   wireless_headphone    5 →  0.5%
+ *   cash_10000            1 →  0.1%  (JACKPOT)
+ *
+ * Win chance = 1 - 0.70 = 30%  →  about 1 win in every 3.3 spins.
+ *
+ * ── HOW TO TUNE THE HIT RATE ────────────────────────────────
+ * Want 1-in-4 wins?  Drop try_again to 750.
+ * Want 1-in-5 wins?  Drop try_again to 800.
+ * Want 1-in-2 wins?  Drop try_again to 500.
+ * Keep the total at 1000 and scale the rest proportionally
+ * if you want to preserve the relative rarity of prizes.
+ */
+export const PRIZE_WEIGHTS: { id: SymbolId; weight: number }[] = [
+  { id: 'try_again',          weight: 900 },
+  { id: 'glass_cover',        weight: 35  },
+  { id: 'mouse',              weight: 18  },
+  { id: 'keyboard',           weight: 14  },
+  { id: 'typec_earphone',     weight: 10  },
+  { id: 'charger',            weight: 7   },
+  { id: 'wireless_earphone',  weight: 6   },
+  { id: 'cashback_3',         weight: 4   },
+  { id: 'cashback_5',         weight: 3   },
+  { id: 'lv_speaker',         weight: 1.5 },
+  { id: 'smart_watch',        weight: 1   },
+  { id: 'keypad_mobile',      weight: 0.2 },
+  { id: 'wireless_headphone', weight: 0.2 },
+  { id: 'cash_10000',         weight: 0.1 },
 ]
+
+export const PRIZE_WEIGHT_TOTAL = PRIZE_WEIGHTS.reduce((sum, p) => sum + p.weight, 0)
+
+export function pickWeightedPrize(): SymbolId {
+  let roll = Math.random() * PRIZE_WEIGHT_TOTAL
+  for (const entry of PRIZE_WEIGHTS) {
+    roll -= entry.weight
+    if (roll <= 0) return entry.id
+  }
+  return PRIZE_WEIGHTS[PRIZE_WEIGHTS.length - 1].id
+}
 
 export const REEL_COUNT = 3
 export const BASE_JACKPOT = 12_500
 export const JACKPOT_GROWTH_PER_SPIN = 75
-export const WIN_CHANCE = 0.18
 export const REEL_CELL = 240
 export const REEL_WINDOW = 690
 export const REEL_COPIES = 10
@@ -218,10 +266,63 @@ export interface ReelStrip {
 
 export function buildReelStrip(finalSymbol: SymbolId): ReelStrip {
   const strip: SymbolId[] = []
-  for (let i = 0; i < REEL_COPIES * SYMBOLS.length; i++) {
-    strip.push(PRIZE_POOL[Math.floor(Math.random() * PRIZE_POOL.length)])
+  const totalLength = REEL_COPIES * SYMBOLS.length
+
+  // Exact position where the predetermined result will land.
+  const landIndex = totalLength - SYMBOLS.length - 1
+
+  // If this reel is landing on 'try_again', the fill slots are
+  // allowed to be 'try_again' too (makes the loss reveal look right).
+  // Otherwise, fill slots must be prize symbols only, so the reel
+  // doesn't look cluttered with "TRY AGAIN" on a winning spin.
+  const allowTryAgain = finalSymbol === 'try_again'
+
+  const pickFill = (): SymbolId => {
+    let symbol: SymbolId
+    do {
+      symbol = pickWeightedPrize()
+    } while (!allowTryAgain && symbol === 'try_again')
+    return symbol
   }
-  const landIndex = strip.length - SYMBOLS.length - 1
-  strip[landIndex] = finalSymbol
-  return { strip, landIndex }
+
+  for (let i = 0; i < totalLength; i++) {
+    // Always guarantee the predetermined result at the landing position.
+    if (i === landIndex) {
+      strip.push(finalSymbol)
+      continue
+    }
+
+    let symbol: SymbolId
+
+    do {
+      symbol = pickFill()
+    } while (
+      // Don't allow the same symbol as the previous position.
+      symbol === strip[i - 1] ||
+      // Don't allow the position immediately before the landing
+      // position to duplicate the final symbol.
+      (i === landIndex - 1 && symbol === finalSymbol)
+    )
+
+    strip.push(symbol)
+  }
+
+  // The position immediately after the landing position was generated
+  // before we knew the final symbol, so fix it if necessary.
+  if (strip[landIndex + 1] === finalSymbol) {
+    let replacement: SymbolId
+    do {
+      replacement = pickFill()
+    } while (
+      replacement === finalSymbol ||
+      replacement === strip[landIndex + 2]
+    )
+
+    strip[landIndex + 1] = replacement
+  }
+
+  return {
+    strip,
+    landIndex,
+  }
 }

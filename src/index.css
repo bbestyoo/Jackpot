@@ -224,6 +224,11 @@ body {
   animation: confettiFall linear forwards;
 }
 
+.confetti-piece--burst {
+  top: 35%;
+  animation-name: confettiBurst;
+}
+
 @keyframes confettiFall {
   0% {
     transform: translate3d(0, 0, 0) rotate(0deg);
@@ -232,6 +237,17 @@ body {
   100% {
     transform: translate3d(var(--drift), 110vh, 0) rotate(720deg);
     opacity: 0.85;
+  }
+}
+
+@keyframes confettiBurst {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.6) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--drift), 75vh, 0) scale(1) rotate(900deg);
+    opacity: 0.7;
   }
 }
 

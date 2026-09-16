@@ -152,7 +152,7 @@ export default function App() {
       setShowResult(false)
       setPhase('idle')
       busyRef.current = false
-    }, won ? 3400 : 2200)
+    }, won ? 4800 : 2200)
   }, [])
 
   const handleReelStop = useCallback((index: number) => {

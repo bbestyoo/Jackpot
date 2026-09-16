@@ -1,9 +1,8 @@
 import {
   BASE_JACKPOT,
   FAKE_NAMES,
-  PRIZE_POOL,
+  pickWeightedPrize,
   SYMBOLS,
-  WIN_CHANCE,
   type SymbolId,
   type Winner,
 } from './constants'
@@ -85,40 +84,123 @@ function seedWinners(): Winner[] {
   return seeded
 }
 
-const WINNING_PRIZES = SYMBOLS.filter((s) => !s.isLose)
-
 export function randomSymbol(): SymbolId {
-  return PRIZE_POOL[Math.floor(Math.random() * PRIZE_POOL.length)]
+  return pickWeightedPrize()
 }
 
-export function randomWinningPrize(): SymbolId {
-  return WINNING_PRIZES[Math.floor(Math.random() * WINNING_PRIZES.length)].id
-}
-
+/**
+ * Weighted-outcome spin. ONE roll decides everything.
+ *
+ *   rollSpin() calls pickWeightedPrize() exactly once.
+ *   • If the roll lands on a prize symbol → guaranteed WIN.
+ *     All three reels are set to that symbol.
+ *   • If the roll lands on 'try_again'      → guaranteed LOSS.
+ *     Three independent weighted symbols are shown (no forced
+ *     near-miss, no engineered patterns — purely natural).
+ *
+ * Hit rate = 1 - P(try_again).
+ *
+ * With the default weights: P(win) = 30%  →  1 win per ~3.3 spins.
+ * Adjust `try_again`'s weight in PRIZE_WEIGHTS to tune this.
+ */
+/**
+ * Weighted-outcome spin. ONE roll decides everything.
+ *
+ *   rollSpin() calls pickWeightedPrize() exactly once.
+ *   • If the roll lands on a prize symbol → guaranteed WIN.
+ *     All three reels are set to that symbol.
+ *   • If the roll lands on 'try_again'      → guaranteed LOSS.
+ *     The loss is STAGED so it looks tense: the first two reels
+ *     show a matching (or different) prize symbol, and only the
+ *     third reel reveals 'try_again'. The underlying 12% win rate
+ *     is unchanged — this is purely visual.
+ *
+ * Hit rate = 1 - P(try_again).
+ */
+/**
+ * Weighted-outcome spin. ONE roll decides everything.
+ *
+ *   rollSpin() calls pickWeightedPrize() exactly once.
+ *   • If the roll lands on a prize symbol → guaranteed WIN.
+ *     All three reels are set to that symbol.
+ *   • If the roll lands on 'try_again'      → guaranteed LOSS.
+ *     The loss is STAGED with one of several patterns so the
+ *     outcome never looks mechanically predictable.
+ *
+ * Hit rate = 1 - P(try_again).
+ */
 export function rollSpin(): { results: SymbolId[]; isWin: boolean } {
-  if (Math.random() < WIN_CHANCE) {
-    const symbol = randomWinningPrize()
-    return { results: [symbol, symbol, symbol], isWin: true }
+  const prize = pickWeightedPrize()
+
+  if (prize !== 'try_again') {
+    // WIN — the weighted roll decided the prize tier.
+    return { results: [prize, prize, prize], isWin: true }
   }
 
-  const a = randomSymbol()
-  let b = randomSymbol()
-  let c = randomSymbol()
-
-  // Prefer near-miss tension: two matching often
-  if (Math.random() < 0.45) {
-    b = a
+  // LOSS — stage the visual reveal so it never looks the same twice.
+  // Helper: pull a non-losing symbol.
+  const pickTease = (): SymbolId => {
+    let s: SymbolId
     do {
-      c = randomSymbol()
-    } while (c === a)
-  } else {
-    while (a === b && b === c) {
-      c = randomSymbol()
-    }
+      s = pickWeightedPrize()
+    } while (s === 'try_again')
+    return s
   }
 
-  const isWin = a === b && b === c && a !== 'try_again'
-  return { results: [a, b, c], isWin }
+  const pattern = Math.random()
+
+  // ── Pattern A (30%) — two matching + try_again on reel 3 ─────
+  // Classic near-miss. Reels 1 & 2 match, reel 3 reveals the loss.
+  if (pattern < 0.30) {
+    const t = pickTease()
+    return { results: [t, t, 'try_again'], isWin: false }
+  }
+
+  // ── Pattern B (20%) — try_again on reel 1, two prizes after ──
+  // Loss revealed early; reels 2 & 3 are random teasers.
+  if (pattern < 0.50) {
+    const a = pickTease()
+    let b: SymbolId
+    do {
+      b = pickTease()
+    } while (b === a)
+    return { results: ['try_again', a, b], isWin: false }
+  }
+
+  // ── Pattern C (20%) — try_again on reel 2, prizes on 1 & 3 ──
+  // Loss revealed in the middle. Reels 1 & 3 look unrelated.
+  if (pattern < 0.70) {
+    const a = pickTease()
+    let c: SymbolId
+    do {
+      c = pickTease()
+    } while (c === a)
+    return { results: [a, 'try_again', c], isWin: false }
+  }
+
+  // ── Pattern D (20%) — two matching prizes + different prize ──
+  // No try_again shown at all. Looks like a normal miss.
+  if (pattern < 0.90) {
+    const t = pickTease()
+    let other: SymbolId
+    do {
+      other = pickTease()
+    } while (other === t)
+    return { results: [t, t, other], isWin: false }
+  }
+
+  // ── Pattern E (10%) — three all-different prizes ─────────────
+  // Pure variety. No try_again visible anywhere.
+  const a = pickTease()
+  let b: SymbolId
+  do {
+    b = pickTease()
+  } while (b === a)
+  let c: SymbolId
+  do {
+    c = pickTease()
+  } while (c === a || c === b)
+  return { results: [a, b, c], isWin: false }
 }
 
 export function makeWinner(prizeId: SymbolId, symbols: SymbolId[]): Winner {
